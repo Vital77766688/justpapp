@@ -11,7 +11,7 @@ urlpatterns = [
 	path('auth/', include('dj_rest_auth.urls')),
     path('auth/registration/', include('dj_rest_auth.registration.urls')),
     path('admin/', admin.site.urls),
-    re_path('*', TemplateView.as_view(template_name='index.html')),
+    re_path(r'.*', TemplateView.as_view(template_name='index.html')),
 ]
 
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
