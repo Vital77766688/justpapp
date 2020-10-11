@@ -10,7 +10,7 @@ SECRET_KEY = os.environ['SECRET_KEY'] # 'fw4fli3wm-0c(r)u(_9tblo(m)m=b(s(ywp39m8
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['djangoreactjustapp.herokuapp.com']
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
