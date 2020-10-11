@@ -10,8 +10,8 @@ urlpatterns = [
 	path('auth/resend-confirmation-email/', ResendConfirmationEmailView.as_view(), name='resend_confirmation_email'),
 	path('auth/', include('dj_rest_auth.urls')),
     path('auth/registration/', include('dj_rest_auth.registration.urls')),
-    path('', TemplateView.as_view(template_name='index.html')),
     path('admin/', admin.site.urls),
+    path('*', TemplateView.as_view(template_name='index.html')),
 ]
 
 urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
