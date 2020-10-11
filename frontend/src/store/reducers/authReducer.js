@@ -6,6 +6,8 @@ import { addSuccessMessage,
 		 stopLoading, 
 } from './appReducer'
 
+const domainName = location.protocol + "//" + document.domain + ":" + location.port
+
 const ME_SUCCESS = '@auth-reducer/me-success'
 const ME_FAILURE = '@auth-reducer/me-failure'
 
@@ -78,7 +80,7 @@ export const me = () => dispatch => {
 	const token = localStorage.getItem('auth-token')
 	if (token) {
 		dispatch(startLoading())
-		axios.get('http://127.0.0.1:8000/auth/user/', {
+		axios.get(`${domainName}/auth/user/`, {
 			headers: {
 				'Authorization': `Token ${token}`
 			}
@@ -99,7 +101,7 @@ export const me = () => dispatch => {
 
 
 export const login = (username, password) => dispatch => {
-	return axios.post('http://127.0.0.1:8000/auth/login/', {username, password})
+	return axios.post(`${domainName}/auth/login/`, {username, password})
 	.then(response => {
 		dispatch({ type: LOGIN_SUCCESS, payload: {token: response.data.key, user: response.data.user} })
 	})
@@ -110,7 +112,7 @@ export const login = (username, password) => dispatch => {
 
 
 export const signup = (username, email, password1, password2) => dispatch => {
-    return axios.post('http://127.0.0.1:8000/auth/registration/', {
+    return axios.post(`${domainName}/auth/registration/`, {
     	username,
     	email,
     	password1,
@@ -128,7 +130,7 @@ export const signup = (username, email, password1, password2) => dispatch => {
 
 export const logout = () => dispatch => {
 	dispatch(startLoading())
-	axios.post('http://127.0.0.1:8000/auth/logout/', null, {
+	axios.post(`${domainName}/auth/logout/`, null, {
 		headers: {
 			'Authorization': `Token ${localStorage.getItem('auth-token')}`
 		}
@@ -144,7 +146,7 @@ export const logout = () => dispatch => {
 }
 
 export const updateProfile = (username, email, first_name, last_name) => dispatch => {
-	return axios.put('http://127.0.0.1:8000/auth/user/', {
+	return axios.put(`${domainName}/auth/user/`, {
 		username,
 		email,
 		first_name,
@@ -164,7 +166,7 @@ export const updateProfile = (username, email, first_name, last_name) => dispatc
 }
 
 export const changePassword = (old_password, new_password1, new_password2) => dispatch => {
-	return axios.post('http://127.0.0.1:8000/auth/password/change/', {
+	return axios.post(`${domainName}/auth/password/change/`, {
 		old_password,
 		new_password1,
 		new_password2
@@ -183,7 +185,7 @@ export const changePassword = (old_password, new_password1, new_password2) => di
 }
 
 export const resetPassword = email => dispatch => {
-	return axios.post('http://127.0.0.1:8000/auth/password/reset/', {email})
+	return axios.post(`${domainName}/auth/password/reset/`, {email})
 	.then(response => {
 		dispatch({ type: RESET_PASSWORD_SUCCESS })
 		dispatch(addInfoMessage('Reset link was sent to your email'))
@@ -194,7 +196,7 @@ export const resetPassword = email => dispatch => {
 }
 
 export const resetPasswordConfirm = (uid, token, new_password1, new_password2) => dispatch => {
-	return axios.post('http://127.0.0.1:8000/auth/password/reset/confirm/', {
+	return axios.post(`${domainName}/auth/password/reset/confirm/`, {
 		uid,
 		token,
 		new_password1,
@@ -209,7 +211,7 @@ export const resetPasswordConfirm = (uid, token, new_password1, new_password2) =
 }
 
 export const sendVerificationEmail = () => dispatch => {
-	return axios.post('http://127.0.0.1:8000/auth/resend-confirmation-email/', null, {
+	return axios.post(`${domainName}/auth/resend-confirmation-email/`, null, {
 		headers: {
 			'Authorization': `Token ${localStorage.getItem('auth-token')}`
 		}
@@ -224,7 +226,7 @@ export const sendVerificationEmail = () => dispatch => {
 
 export const verifyEmail = key => dispatch => {
 	dispatch(startLoading())
-	return axios.post('http://127.0.0.1:8000/auth/registration/verify-email/', {key})
+	return axios.post(`${domainName}/auth/registration/verify-email/`, {key})
 	.then(response => {
 		dispatch({ type: VERIFY_EMAIL_SUCCESS })
 		dispatch(addSuccessMessage(response.data))
