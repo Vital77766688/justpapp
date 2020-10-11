@@ -1,6 +1,7 @@
 from django.utils.translation import ugettext_lazy as _
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.sites.shortcuts import get_current_site
 from rest_framework import serializers
 from dj_rest_auth.serializers import PasswordResetSerializer
 from allauth.account import app_settings as allauth_settings
@@ -14,9 +15,12 @@ UserModel = get_user_model()
 
 class PasswordResetSerializer(PasswordResetSerializer):
 	def get_email_options(self): 
+		current_site = get_current_site(self.context['request'])
+
 		return {
 			'subject_template_name': settings.PASSWORD_RESET_SUBJECT_TEMPLATE,
 			'email_template_name': settings.PASSWORD_RESET_EMAIL_TEMPLATE,
+			'from_email': f'noreply@{current_site.domain}'
 		}
 
 

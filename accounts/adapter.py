@@ -4,9 +4,12 @@ from allauth.account.adapter import DefaultAccountAdapter
 
 
 class AccountAdapter(DefaultAccountAdapter):
+	def get_from_email(self):
+		current_site = get_current_site(self.request)
+		return f'noreply@{current_site.domain}'
+
 	def send_confirmation_mail(self, request, emailconfirmation, signup):
 		current_site = get_current_site(request)
-		self.from_email = f'noreply@{current_site.domain}'
 		
 		ctx = {
 			"user": emailconfirmation.email_address.user,
