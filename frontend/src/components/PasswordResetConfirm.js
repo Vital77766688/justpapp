@@ -10,12 +10,11 @@ const PasswordResetConfirm = ({ match: { params: {uid, token} }, resetPasswordCo
 	const handleResetPasswordConfirm = (values, setSubmitting, setErrors) => {
 		resetPasswordConfirm(uid, token, values.new_password1, values.new_password2)
 		.then(data => {
-			if (data) {
-				setErrors(data.payload)
-				setSubmitting(false)
-			} else {
-				history.push('/password-reset-complete')
-			}
+			history.push('/password-reset-complete')
+		})
+		.catch(errors => {
+			setErrors(errors.payload)
+			setSubmitting(false)
 		})
 	}
 

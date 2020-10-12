@@ -9,13 +9,12 @@ const PasswordReset = ({ auth, resetPassword, history }) => {
 	
 	const handleResetPassword = (values, setSubmitting, setErrors) => {
 		resetPassword(values.email)
-		.then(data => {
-			if (data) {
-				setErrors(data.payload)
-				setSubmitting(false)
-			} else {
-				history.push('/password-reset-done')
-			}
+		.then(() => {
+			history.push('/password-reset-done')
+		})
+		.catch(errors => {
+			setErrors(errors.payload)
+			setSubmitting(false)
 		})
 	}
 

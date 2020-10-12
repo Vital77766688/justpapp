@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { connect } from 'react-redux'
 
 
-const Header = ({ auth, location }) => {
+const Header = ({ loading, auth }) => {
 	const authLinks = (
 		<ul className="navbar-nav">
 			<li className="nav-item dropdown">
@@ -48,7 +48,7 @@ const Header = ({ auth, location }) => {
 								<Link className="nav-link" to='/chats'>Chats</Link>
 							</li>
 						</ul>
-						{auth.user ? authLinks : guestLinks}
+						{loading ? null : auth.user ? authLinks : guestLinks}
 					</div>
 				</div>
 			</nav>
@@ -57,6 +57,7 @@ const Header = ({ auth, location }) => {
 }
 
 const mapStateToProps = state => ({
+	loading: state.app.isLoading,
 	auth: state.auth
 })
 

@@ -11,6 +11,8 @@ import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dj.settings')
+settings = os.environ.get('ENVIRONMENT')
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', settings if settings else 'dj.settings.settings_development')
 
 application = get_asgi_application()

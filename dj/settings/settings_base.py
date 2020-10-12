@@ -2,16 +2,9 @@ import os, dj_database_url
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ['SECRET_KEY'] # 'fw4fli3wm-0c(r)u(_9tblo(m)m=b(s(ywp39m8+1y37q%)2%^'
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 ALLOWED_HOSTS = ['*']
-
 
 # Application definition
 
@@ -41,15 +34,6 @@ INSTALLED_APPS = [
 ]
 
 SITE_ID = 1
-
-# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = '587'
-EMAIL_HOST_USER = os.environ['EMAIL_HOST_USER']
-EMAIL_HOST_PASSWORD = os.environ['EMAIL_HOST_PASSWORD']
-EMAIL_USE_TLS = True
-
 
 
 MIDDLEWARE = [
@@ -112,18 +96,6 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'dj.wsgi.application'
-
-
-# Database
-# https://docs.djangoproject.com/en/3.1/ref/settings/#databases
-
-DATABASES = {
-    # 'default': {
-    #     'ENGINE': 'django.db.backends.sqlite3',
-    #     'NAME': BASE_DIR / 'db.sqlite3',
-    # }
-    'default': dj_database_url.config(default=os.environ['DATABASE_URL'])
-}
 
 
 # Password validation

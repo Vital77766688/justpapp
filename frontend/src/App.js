@@ -18,6 +18,7 @@ import PasswordReset from './components/PasswordReset'
 import PasswordResetDone from './components/PasswordResetDone'
 import PasswordResetConfirm from './components/PasswordResetConfirm'
 import PasswordResetComplete from './components/PasswordResetComplete'
+import Chats from './components/Chats'
 
 
 function App({ me }) {
@@ -36,6 +37,7 @@ function App({ me }) {
                 <Route path='/password-reset-done' component={PasswordResetDone}/>
                 <Route path='/password-reset-confirm/:uid/:token' component={PasswordResetConfirm}/>
                 <Route path='/password-reset-complete' component={PasswordResetComplete}/>
+                <PrivateRoute path='/chats' component={Chats}/>
                 <Route exact path='/' component={Home}/>
                 <Route path='*' component={NotFound404}/>
             </Switch>
