@@ -1,0 +1,14 @@
+{
+  "name": "dj1",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "heroku-prebuild": "NODE_ENV=production cd frontend/ && npm install && npm build && cd .."
+  },
+  "repository": "",
+  "author": "Vitaliy",
+  "license": "MIT",
+  "cacheDirectories": [
+    "frontend/node_modules"
+  ]
+}
