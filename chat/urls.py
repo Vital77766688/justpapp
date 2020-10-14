@@ -1,6 +1,17 @@
-from django.urls import path
-from .views import UsersListView
+from django.urls import path, include
+from rest_framework_nested import routers
+from .views import *
+
+
+router = routers.SimpleRouter
+router.register('contacts', ContactViewSet)
+router.register('chats', ChatViewSet)
+
+chat_router = routers.NestedSimpleRouter(router, 'chats', lookup='chat')
+chat_router.register('messages', MessageViewSet, basename='messages')
+
 
 urlpatterns = [
-	path('users/', UsersListView.as_view(), name='users'),
+	path('', include(router.urls)),
+	path('', include(chat_router.urls)),
 ]

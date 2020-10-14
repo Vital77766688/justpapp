@@ -1,10 +1,14 @@
-from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from .models import *
 
-UserModel = get_user_model()
+
+class ContactSerializer(serializers.ModelSerializer):
+	pass
 
 
-class UsersListSerializer(serializers.ModelSerializer):
-	class Meta:
-		model = UserModel
-		fields= ['id', 'username', 'email', 'first_name', 'last_name']
+class MessageSerializer(serializers.ModelSerializer):
+	pass
+
+
+class ChatSerializer(serializers.ModelSerializer):
+	pass

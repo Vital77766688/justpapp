@@ -1,3 +1,13 @@
 from django.db import models
 
-# Create your models here.
+
+class Contact(models.Model):
+	pass
+
+
+class Message(models.Model):
+	pass
+
+
+class Chat(models.Model):
+	pass
