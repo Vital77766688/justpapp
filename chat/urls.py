@@ -1,17 +1,15 @@
 from django.urls import path, include
-from rest_framework_nested import routers
+from rest_framework_nested.routers import SimpleRouter, NestedSimpleRouter
 from .views import *
 
+router = SimpleRouter()
+router.register('chats', ChatViewSet, basename='chats')
 
-router = routers.SimpleRouter
-router.register('contacts', ContactViewSet)
-router.register('chats', ChatViewSet)
-
-chat_router = routers.NestedSimpleRouter(router, 'chats', lookup='chat')
-chat_router.register('messages', MessageViewSet, basename='messages')
+message_router = NestedSimpleRouter(router, 'chats', lookup='chat')
+message_router.register('messages', MessageViewSet, basename='messages')
 
 
 urlpatterns = [
 	path('', include(router.urls)),
-	path('', include(chat_router.urls)),
+	path('', include(message_router.urls)),
 ]
