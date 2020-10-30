@@ -1,14 +1,18 @@
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.generics import get_object_or_404
-from rest_framework.viewsets import ModelViewSet
 from rest_framework.decorators import action
+from rest_framework.viewsets import ModelViewSet
+from rest_framework import permissions
+from .permissions import *
 from .serializers import *
 from .models import *
 
 
 class ChatViewSet(ModelViewSet):
 	serializer_class = ChatListSerializer
+	permission_classes = (permissions.IsAuthenticated,
+						  UpdateChatPermission)
 
 	def get_serializer_class(self):
 		print(self.action)
@@ -18,6 +22,8 @@ class ChatViewSet(ModelViewSet):
 			return GroupChatCreateSerializer
 		elif self.action in ('update', 'partial_update'):
 			return GroupChatUpdateSerializer
+		elif self.action == 'add_remove_admin':
+			return GroupChatUpdateAdminSerializer
 		return self.serializer_class
 	
 	def get_queryset(self):
@@ -53,12 +59,21 @@ class ChatViewSet(ModelViewSet):
 
 	@action(['post'], detail=False)
 	def create_group(self, request, *args, **kwargs):
-		return super().create(request)
+		return self.create(request)
+
+	@action(['put', 'patch'], detail=True)
+	def add_remove_admin(self, request, *args, **kwargs):
+		return self.update(request)
+
 
 
 class MessageViewSet(ModelViewSet):
 	lookup_field = 'message__id'
 	serializer_class = UserMessageListSerializer
+	permission_classes = (permissions.IsAuthenticated,
+						  ReadWriteMessagePermission,
+						  DeleteMessagePermission,
+						  UpdateMessagePermission,)
 
 	def get_serializer_class(self):
 		if self.action in ('create', 'update', 'partial_update'):

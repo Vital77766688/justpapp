@@ -1,5 +1,4 @@
 from django.contrib.auth import get_user_model
-# from rest_framework import permissions
 from rest_framework import serializers
 from .models import *
 
@@ -88,7 +87,6 @@ class GroupChatCreateSerializer(GetUsersMixin, serializers.Serializer):
 		chat = Chat.objects.create(is_group_chat=True, creator=creator)
 		chat.users.add(*users)
 		group = GroupChat.objects.create(chat=chat, chat_name=validated_data['chat_name'])
-		group.admins.add(creator)
 		return chat
 
 	def to_representation(self, instance):
@@ -99,35 +97,8 @@ class GroupChatCreateSerializer(GetUsersMixin, serializers.Serializer):
 		}
 
 
-class GroupChatUpdateSerializer(GetUsersMixin, serializers.Serializer):
-	chat_name = serializers.CharField(max_length=50, required=False)
-	add_users = serializers.ListField(child=serializers.CharField(), required=False)
-	remove_users = serializers.ListField(child=serializers.CharField(), required=False)
-	add_admins = serializers.ListField(child=serializers.CharField(), required=False)
-	remove_admins = serializers.ListField(child=serializers.CharField(), required=False)
-
-
-	def update(self, instance, validated_data):
-		new_chat_name = validated_data.get('chat_name')
-		if new_chat_name:
-			instance.group.chat_name = new_chat_name
-		
-		add_users = validated_data.get('add_users')
-		if add_users:
-			instance.users.add(*self.get_users(add_users))
-		
-		remove_users = validated_data.get('remove_users')
-		if remove_users:
-			instance.users.remove(*self.get_users(remove_users))
-
-		add_admins = validated_data.get('add_admins')
-		if add_admins:
-			instance.group.admins.add(*self.get_users(add_admins))
-
-		remove_admins = validated_data.get('remove_admins')
-		if remove_admins:
-			instance.group.admins.remove(*self.get_users(remove_admins))
-
+class GroupChatUpdateAbstractSerializer(GetUsersMixin, serializers.Serializer):
+	def perform_update(self, instance):
 		instance.save()
 		instance.group.save()
 		return instance
@@ -142,6 +113,50 @@ class GroupChatUpdateSerializer(GetUsersMixin, serializers.Serializer):
 			'create_date': instance.create_date,
 			'is_group_chat': instance.is_group_chat,
 		}
+
+
+class GroupChatUpdateSerializer(GroupChatUpdateAbstractSerializer):
+	chat_name = serializers.CharField(max_length=50, required=False)
+	add_users = serializers.ListField(child=serializers.CharField(), required=False)
+	remove_users = serializers.ListField(child=serializers.CharField(), required=False)
+
+	def update(self, instance, validated_data):
+		new_chat_name = validated_data.get('chat_name')
+		if new_chat_name:
+			instance.group.chat_name = new_chat_name
+		
+		add_users = validated_data.get('add_users')
+		if add_users:
+			instance.users.add(*self.get_users(add_users))
+		
+		remove_users = validated_data.get('remove_users')
+		if remove_users:
+			instance.users.remove(*self.get_users(remove_users))
+
+		return self.perform_update(instance)
+
+
+class GroupChatUpdateAdminSerializer(GroupChatUpdateAbstractSerializer):
+	admin = serializers.CharField()
+	remove_admin = serializers.BooleanField()
+
+	def update(self, instance, validated_data):
+		if validated_data.get('remove_admin'):
+			try:
+				admin = instance.group.admins.get(username=validated_data.get('admin'))
+				instance.group.admins.remove(admin)
+			except User.DoesNotExist:
+				raise serializers.ValidationError('Cannot be done. User is not admin')
+		else:
+			try:
+				admin = instance.users.get(username=validated_data.get('admin'))
+				instance.group.admins.add(admin)
+			except User.DoesNotExist:
+				raise serializers.ValidationError('User should be a chat participant')
+
+		return self.perform_update(instance)
+
+
 
 
 class UserMessageListSerializer(serializers.ModelSerializer):
