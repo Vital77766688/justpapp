@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.generics import get_object_or_404
@@ -7,6 +8,155 @@ from rest_framework import permissions
 from .permissions import *
 from .serializers import *
 from .models import *
+
+User = get_user_model()
+
+
+class UserViewSet(ModelViewSet):
+	serializer_class = UserSerializer
+	queryset = User.objects.all()
+	permission_classes = (permissions.IsAuthenticated,)
+	http_method_names = ('get', 'options')
+
+
+class ContactViewSet(ModelViewSet):
+	serializer_class = ContactListRetrieveSerializer
+	permission_classes= (permissions.IsAuthenticated,)
+
+	def get_queryset(self):
+		return self.request.user.contacts.all()
+
+	def get_serializer_class(self):
+		if self.action == 'create':
+			return ContactCreateSerializer
+		elif self.action == 'send_message':
+			return ContactMessageSerializer
+		return self.serializer_class
+
+	@action(['post'], detail=True)
+	def send_message(self, request, *args, **kwargs):
+		return self.create(request)
+
+
+class ChatViewSet(ModelViewSet):
+	lookup_field = 'chat__id'
+	serializer_class = ChatListRetrieveDestroySerializer
+	permission_classes = (permissions.IsAuthenticated,)
+
+	def get_queryset(self):
+		return self.request.user.chats.all()
+
+	def get_serializer_class(self):
+		if self.action == 'create':
+			return GroupChatCreateSerializer
+		elif self.action in ('update', 'partial_update', 'set_owner'):
+			return GroupChatUpdateSerializer
+		elif self.action in ('add_admin', 'remove_admin'):
+			return ChatManageAdminSerializer
+		elif self.action in ('add_users', 'remove_users'):
+			return ChatManageUsersSerializer
+		return self.serializer_class
+
+	def update(self, request, *args, **kwargs):
+		partial = True
+		instance = self.get_object()
+		# Removing owner field if passed
+		if self.action != 'set_owner':
+			request.data.pop('owner', None)
+		serializer = self.get_serializer(instance.chat.group, data=request.data, partial=partial)
+		serializer.is_valid(raise_exception=True)
+		self.perform_update(serializer)
+		if getattr(instance, '_prefetched_objects_cache', None):
+			# If 'prefetch_related' has been applied to a queryset, we need to
+			# forcibly invalidate the prefetch cache on the instance.
+			instance._prefetched_objects_cache = {}
+		return Response(serializer.data)
+
+
+	@action(['post'], detail=True)
+	def set_owner(self, request, *args, **kwargs):
+		owner = request.data.get('owner')
+		if owner:
+			request.data.clear()
+			request.data['owner'] = owner
+			return self.update(request, args, kwargs)
+		return Response("You should provide owner in request's body", status=status.HTTP_400_BAD_REQUEST)
+
+	@action(['post'], detail=True)
+	def add_users(self, request, *args, **kwargs):
+		return super(ChatViewSet, self).create(request, args, kwargs)
+
+	@action(['post'], detail=True)
+	def remove_users(self, request, *args, **kwargs):
+		return super(ChatViewSet, self).create(request, args, kwargs)
+
+	@action(['post'], detail=True)
+	def add_admin(self, request, *args, **kwargs):
+		return super(ChatViewSet, self).create(request, args, kwargs)
+
+	@action(['post'], detail=True)
+	def remove_admin(self, request, *args, **kwargs):
+		return super(ChatViewSet, self).create(request, args, kwargs)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # class ChatViewSet(ModelViewSet):

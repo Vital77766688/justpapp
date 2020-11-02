@@ -27,24 +27,18 @@ class ChatManager(models.Manager):
 		return chat
 
 
-class UserMessageManager(models.Manager):
-	def create(self, user, author, message, chat):
-		message = Message.objects.create(author=author, text=message)
-		return super().create(chat=chat, user=user, message=message)
-
-
 class Chat(models.Model):
 	is_group_chat = models.BooleanField(default=False)
 	group = models.OneToOneField('GroupChat', on_delete=models.CASCADE, related_name='chat', null=True)
 
 	objects = ChatManager()
 
-	def send_message(self, author, message):
-		if not self.users.filter(user=author).exists():
+	def send_message(self, message):
+		if not self.users.filter(user=message.author).exists():
 			raise UserIsNotInChat
 		with transaction.atomic():
 			for user in self.users.all():
-				self.messages.create(user=user.user, author=author, message=message)
+				self.messages.create(user=user.user, message=message)
 
 	def add_user(self, user, chat_contact=None):
 		if not self.users.filter(user=user).exists():
@@ -76,7 +70,9 @@ class GroupChat(models.Model):
 				self.chat.add_user(user=user)
 
 	def remove_users(self, users):
-		self.chat.users.filter(user__in=users).delete()
+		with transaction.atomic():
+			self.admins.remove(*users)
+			self.chat.users.filter(user__in=users).delete()
 
 
 class UserChat(models.Model):
@@ -96,7 +92,7 @@ class UserChat(models.Model):
 	def send_message(self, message):
 		if not self.chat.is_group_chat:
 			self.chat.add_user(user=self.chat_contact, chat_contact=self.user)
-		self.chat.send_message(author=self.user, message=message)
+		self.chat.send_message(message=message)
 
 	class Meta:
 		unique_together = ['user', 'chat']
@@ -115,7 +111,7 @@ class Contact(models.Model):
 
 	def _get_contact_chat(self):
 		chat = self.contact.chats.get(chat_contact=self.user).chat
-		return self.user.chats.create(chat=chat, contact=self.contact)
+		return self.user.chats.create(chat=chat, chat_contact=self.contact)
 
 	def _create_chat(self):
 		Chat.objects.create(self)
@@ -152,8 +148,6 @@ class UserMessage(models.Model):
 	user = models.ForeignKey(User, on_delete=models.CASCADE)
 	delivery_date = models.DateTimeField(blank=True, null=True)
 	read_date = models.DateTimeField(blank=True, null=True)
-
-	objects = UserMessageManager()
 
 	def __str__(self):
 		return f"{self.user.username}: {self.message.text[:20]} by {self.message.author.username}"
