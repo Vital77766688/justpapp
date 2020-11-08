@@ -1,38 +1,46 @@
-from rest_framework.generics import get_object_or_404
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework.permissions import BasePermission
 from .models import *
 
 
-class ReadWriteMessagePermission(BasePermission):
+def get_key(kwargs:dict) -> str:
+	key = None
+	for k in ['chat__id', 'chat_chat__id']:
+		key = kwargs.get(k)
+		if key:
+			break
+	return key
+
+
+
+class IsChatUser(BasePermission):
 	def has_permission(self, request, view):
-		chat = get_object_or_404(Chat, pk=view.kwargs['chat_pk'])
-		return chat.users.filter(pk=request.user.pk).exists()
+		key = get_key(view.kwargs)
+		if not key:
+			return True
+		try:
+			return request.user.chats.get(chat__id=key)
+		except ObjectDoesNotExist:
+			return False
 
 
-class DeleteMessagePermission(BasePermission):
+class IsChatAdminOrOwner(BasePermission):
+	def has_permission(self, request, view):
+		try:
+			chat = request.user.chats.get(chat__id=get_key(view.kwargs))
+			return chat.is_admin or chat.is_owner
+		except ObjectDoesNotExist:
+			return False
+			
+
+class IsChatOwner(BasePermission):
+	def has_permission(self, request, view):
+		try:
+			return request.user.chats.get(chat__id=get_key(view.kwargs)).is_owner
+		except ObjectDoesNotExist:
+			return False
+
+
+class IsMessageAuthor(BasePermission):
 	def has_object_permission(self, request, view, obj):
-		if view.action == 'complete_delete':
-			if obj.message.author == request.user:
-				return True
-			else:
-				return obj.chat.group.admins.filter(pk=request.user.pk).exists()
-		return True
-
-
-class UpdateMessagePermission(BasePermission):
-	def has_object_permission(self, request, view, obj):
-		if view.action in ('update', 'partial_update'):
-			return obj.message.author == request.user
-		return True
-
-
-class UpdateChatPermission(BasePermission):
-	def has_object_permission(self, request, view, obj):
-		if obj.is_group_chat:
-			if obj.creator == request.user:
-				return True
-			elif view.action in ('update', 'partial_update'):
-				return obj.group.admins.filter(pk=request.user.pk).exists()
-			elif view.action == 'add_remove_admin':
-				return request.user.username == request.data['admin'] and request.data['remove_admin'] == 'true'
-		return True
+		return obj.message.author == request.user

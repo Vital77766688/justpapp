@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from .exceptions import *
@@ -6,6 +7,45 @@ from .models import *
 
 
 User = get_user_model()
+
+
+class ChatMixin:
+	def get_instance(self, instance):
+		return (
+			instance.chat,
+			instance,
+		)
+
+	def is_group_chat(self, instance):
+		if instance.is_group_chat:
+			return True
+		raise serializers.ValidationError('You cannot manage private chats')
+
+	def to_representation(self, instance):
+		chat, instance = self.get_instance(instance)
+		last_message = instance.last_message
+		unread_messages = chat.messages. \
+							filter(user=instance.user, read_date__isnull=True). \
+							exclude(message__author=instance.user). \
+							count()
+		result = {
+			'id': chat.id,
+			'last_message': last_message.text[:20] if last_message else None,
+			'last_message_date': last_message.create_date if last_message else None,
+			'unread_messages': unread_messages,
+			'is_group_chat': chat.is_group_chat,
+		}
+		if chat.is_group_chat:
+			users = [(u.user.username, u.is_admin) for u in chat.users.all()]
+			result['chat_name'] = chat.chat_name
+			result['creator'] = chat.creator.username
+			result['owner'] = chat.users.get(is_owner=True).user.username
+			result['users'] = [user[0] for user in users]
+			result['admins'] = [user[0] for user in users if user[1]]
+		else:
+			result['user'] = instance.chat_contact.username
+
+		return result
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -30,7 +70,7 @@ class ContactCreateSerializer(serializers.Serializer):
 	def validate_contact(self, value):
 		try:
 			return User.objects.get(username=value)
-		except User.DoesNotExist:
+		except ObjectDoesNotExist:
 			raise serializers.ValidationError('No such user')
 
 	def create(self, validated_data, *args, **kwargs):
@@ -42,6 +82,10 @@ class ContactCreateSerializer(serializers.Serializer):
 
 class ContactMessageSerializer(serializers.Serializer):
 	message = serializers.CharField()
+
+	def validate(self, attrs):
+		# TODO validate contact id
+		return attrs
 
 	def create(self, validated_data, *args, **kwargs):
 		author = self.context['request'].user
@@ -60,45 +104,12 @@ class ContactMessageSerializer(serializers.Serializer):
 		}
 
 
-class ChatListRetrieveDestroySerializer(serializers.ModelSerializer):
+class ChatListRetrieveDestroySerializer(ChatMixin, serializers.ModelSerializer):
 	class Meta:
 		model = UserChat
 
-	def to_representation(self, instance):
-		last_message = instance.chat.messages.all().order_by('-id')[0].message \
-					   if instance.chat.messages.exists() else None
 
-		if instance.chat.is_group_chat:
-			return {
-				'id': instance.chat.id,
-				'chat_name': instance.chat.group.chat_name,
-				'creator': instance.chat.group.creator.username,
-				'owner': instance.chat.group.owner.username,
-				'users': [user.user.username for user in instance.chat.users.all()],
-				'admins': [admin.username for admin in instance.chat.group.admins.all()],
-				'last_message': last_message.text[:20] if last_message else None,
-				'last_message_date': last_message.create_date if last_message else None,
-				'unread_messages': instance.chat.messages \
-									.filter(user=instance.user, read_date__isnull=True) \
-									.exclude(message__author=instance.user) \
-									.count(),
-				'is_group_chat': instance.chat.is_group_chat,
-			}
-		else:
-			return {
-				'id': instance.chat.id,
-				'user': instance.chat_contact.username,
-				'last_message': last_message.text[:20] if last_message else None,
-				'last_message_date': last_message.create_date if last_message else None,
-				'unread_messages': instance.chat.messages \
-									.filter(user=instance.user, read_date__isnull=True) \
-									.exclude(message__author=instance.user) \
-									.count(),
-				'is_group_chat': instance.chat.is_group_chat,
-			}
-
-
-class GroupChatCreateSerializer(serializers.Serializer):
+class GroupChatCreateSerializer(ChatMixin, serializers.Serializer):
 	users = serializers.ListField(child=serializers.CharField())
 	chat_name = serializers.CharField(max_length=50)
 
@@ -110,306 +121,147 @@ class GroupChatCreateSerializer(serializers.Serializer):
 										 users=users)
 		return chat.users.get(user=creator)
 
-	def to_representation(self, instance):
-		return ChatListRetrieveDestroySerializer(instance).data
 
-
-class GroupChatUpdateSerializer(serializers.ModelSerializer):
+class GroupChatUpdateSerializer(ChatMixin, serializers.ModelSerializer):
 	chat_name = serializers.CharField(required=False)
-	owner = serializers.SlugRelatedField(many=False, \
-										 read_only=False, \
-										 queryset=User.objects.all(), \
-										 slug_field='username')
+	owner = serializers.CharField(required=False, write_only=True)
 
 	class Meta:
-		model = GroupChat
+		model = Chat
 		fields = ['chat_name', 'owner']
 
+	def validate_owner(self, value):
+		try:
+			return User.objects.get(username=value)
+		except ObjectDoesNotExist:
+			raise serializers.ValidationError('User does not exists')
+
 	def update(self, instance, validated_data):
-		print(validated_data, instance)
+		self.is_group_chat(instance)
+		if validated_data.get('owner'):
+			instance.set_owner(validated_data['owner'])
 		return super().update(instance, validated_data)
 
+	def get_instance(self, instance):
+		return (
+			instance,
+			instance.users.get(user__id=self.context['request'].user.id)
+		)
+
+
+class ChatManageSerializer(ChatMixin, serializers.Serializer):
+	def get_chat(self):
+		chat = self.context['view'].kwargs.get('chat')
+		if not chat:
+			raise serializers.ValidationError('No chat instance')
+		_ = self.is_group_chat(chat)
+		return chat
+
 	def to_representation(self, instance):
-		user_chat_instance = instance.chat.users.get(user=self.context['request'].user)
-		return ChatListRetrieveDestroySerializer(user_chat_instance).data
+		return instance
 
 
-class ChatManageAdminSerializer(serializers.Serializer):
+class ChatAddAdminSerializer(ChatManageSerializer):
 	admin = serializers.CharField()
 
 	def validate_admin(self, value):
+		chat = self.get_chat()
 		try:
-			return User.objects.get(username=value)
-		except User.DoesNotExist:
-			raise serializers.ValidationError('No such user')
+			return chat.users.get(user__username=value, is_admin=False).user
+		except ObjectDoesNotExist:
+			raise serializers.ValidationError('User does not exists or is not a chat member or user is already admin')
 
 	def create(self, validated_data, *args, **kwargs):
-		chat = GroupChat.objects.get(chat__id=self.context['view'].kwargs.get('chat__id'))
-		if self.context['view'].action == 'add_admin':
-			try:
-				chat.add_admin(validated_data['admin'])
-			except UserIsNotInChat:
-				raise serializers.ValidationError('User should be a member of this group')
-		elif self.context['view'].action == 'remove_admin':
-			chat.remove_admin(validated_data['admin'])
-
-		return chat
-
-	def to_representation(self, instance):
-		user_chat_instance = instance.chat.users.get(user=self.context['request'].user)
-		return ChatListRetrieveDestroySerializer(user_chat_instance).data
+		chat = self.get_chat()
+		chat.add_admin(validated_data['admin'])
+		return {'detail': f"{validated_data['admin'].username} has been added to admins"}
 
 
-class ChatManageUsersSerializer(serializers.Serializer):
+class ChatRemoveAdminSerializer(ChatManageSerializer):
+	admin = serializers.CharField()
+
+	def validate_admin(self, value):
+		chat = self.get_chat()
+		try:
+			admin = chat.users.get(user__username=value, is_admin=True).user
+			return admin
+		except ObjectDoesNotExist:
+			raise serializers.ValidationError('User does not exists or is not a chat member or user is not admin')
+
+	def create(self, validated_data, *args, **kwargs):
+		chat = self.get_chat()
+		chat.remove_admin(validated_data['admin'])
+		return {'detail': f"{validated_data['admin'].username} has been removed from admins"}
+
+
+class ChatAddUsersSerializer(ChatManageSerializer):
 	users = serializers.ListField(child=serializers.CharField())
 
-	def validate_users(self, value):
-		return User.objects.filter(username__in=value)
+	def validate(self, attrs):
+		chat = self.get_chat()
+		users = User.objects. \
+					filter(username__in=attrs['users']). \
+					exclude(id__in=[u.user.id for u in chat.users.all()])
+		return {
+			'add_users': users,
+			'skip_users': [username for username in attrs['users'] if not username in [u.username for u in users]]
+		}
+
 
 	def create(self, validated_data, *args, **kwargs):
-		chat = GroupChat.objects.get(chat__id=self.context['view'].kwargs.get('chat__id'))
-		if self.context['view'].action == 'add_users':
-			chat.add_users(validated_data['users'])
-		elif self.context['view'].action == 'remove_users':
-			chat.remove_users(validated_data['users'])
+		chat = self.get_chat()
+		with transaction.atomic():
+			for user in validated_data['add_users']:
+				chat.add_user(user)
+		return {
+			'users_added': [u.username for u in validated_data['add_users']],
+			'users_skipped': validated_data['skip_users'],
+		}
 
-		return chat
 
-	def to_representation(self, instance):
-		user_chat_instance = instance.chat.users.get(user=self.context['request'].user)
-		return ChatListRetrieveDestroySerializer(user_chat_instance).data
+class ChatRemoveUserSerializer(ChatManageSerializer):
+	user = serializers.CharField()
+
+	def validate_user(self, value):
+		chat = self.get_chat()
+		try:
+			return chat.users.get(user__username=value).user
+		except ObjectDoesNotExist:
+			raise serializers.ValidationError('User does not exists or user is not member of the chat')
+
+	def create(self, validated_data, *args, **kwargs):
+		chat = self.get_chat()
+		chat.remove_user(validated_data['user'])
+		return {'detail': f"{validated_data['user'].username} was successfuly removed from the chat"}
 
 
 class MessageSerializer(serializers.ModelSerializer):
+	message = serializers.CharField()
+
 	class Meta:
 		model = UserMessage
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# class GetUsersMixin:
-# 	def get_users(self, users):
-# 		return User.objects.filter(username__in=users)
-
-
-# class ChatListSerializer(serializers.ModelSerializer):
-# 	class Meta:
-# 		model = Chat
-
-# 	def to_representation(self, instance):
-# 		user = self.context['request'].user
-# 		last_message = instance.messages.all().order_by('-id')[0].message \
-# 					   if instance.messages.exists() else None
-
-# 		if instance.is_group_chat:
-# 			return {
-# 				'id': instance.id,
-# 				'chat_name': instance.group.chat_name,
-# 				'creator': instance.creator.username,
-# 				'users': [user.username for user in instance.users.all()],
-# 				'admins': [user.username for user in instance.group.admins.all()],
-# 				'create_date': instance.create_date,
-# 				'last_message': last_message.text[:20] if last_message else None,
-# 				'last_message_date': last_message.create_date if last_message else None,
-# 				'unread_messages': instance.messages \
-# 									.filter(user=user, read_date__isnull=True) \
-# 									.exclude(message__author=user) \
-# 									.count(),
-# 				'is_group_chat': instance.is_group_chat,
-# 			}
-# 		else:
-# 			return {
-# 				'id': instance.id,
-# 				'user': instance.users.exclude(id=user.id).first().username,
-# 				'create_date': instance.create_date,
-# 				'last_message': last_message.text[:20] if last_message else None,
-# 				'last_message_date': last_message.create_date if last_message else None,
-# 				'unread_messages': instance.messages \
-# 									.filter(user=user, read_date__isnull=True) \
-# 									.exclude(message__author=user) \
-# 									.count(),
-# 				'is_group_chat': instance.is_group_chat,
-# 			}
-
-
-# class PrivateChatCreateSerializer(serializers.Serializer):
-# 	user = serializers.CharField()
-
-# 	def create(self, validated_data, *args, **kwargs):
-# 		creator = self.context['request'].user
-# 		user = User.objects.get(username=validated_data['user'])
-# 		chat = Chat.objects.create(is_group_chat=False, creator=creator)
-# 		chat.users.add(*[creator, user])
-# 		return chat
-
-# 	def validate(self, attrs):
-# 		try:
-# 			user = User.objects.get(username=attrs.get('user'))
-# 		except User.DoesNotExist:
-# 			raise serializers.ValidationError('User with such username does not exist')
-# 		return attrs
-
-
-# 	def to_representation(self, instance):
-# 		return {
-# 			'id': instance.id,
-# 			'users': [user.username for user in instance.users.all()]
-# 		}
-
-
-# class GroupChatCreateSerializer(GetUsersMixin, serializers.Serializer):
-# 	users = serializers.ListField(child=serializers.CharField())
-# 	chat_name = serializers.CharField(max_length=50)
-
-# 	def create(self, validated_data):
-# 		creator = self.context['request'].user
-# 		users = self.get_users(validated_data.get('users'))
-# 		users |= User.objects.filter(pk=creator.pk)
-# 		chat = Chat.objects.create(is_group_chat=True, creator=creator)
-# 		chat.users.add(*users)
-# 		group = GroupChat.objects.create(chat=chat, chat_name=validated_data['chat_name'])
-# 		return chat
-
-# 	def to_representation(self, instance):
-# 		return {
-# 			'id': instance.id,
-# 			'chat_name': instance.group.chat_name,
-# 			'users': [user.username for user in instance.users.all()]
-# 		}
-
-
-# class GroupChatUpdateAbstractSerializer(GetUsersMixin, serializers.Serializer):
-# 	def perform_update(self, instance):
-# 		instance.save()
-# 		instance.group.save()
-# 		return instance
-
-# 	def to_representation(self, instance):
-# 		return {
-# 			'id': instance.id,
-# 			'chat_name': instance.group.chat_name,
-# 			'creator': instance.creator.username,
-# 			'users': [user.username for user in instance.users.all()],
-# 			'admins': [user.username for user in instance.group.admins.all()],
-# 			'create_date': instance.create_date,
-# 			'is_group_chat': instance.is_group_chat,
-# 		}
-
-
-# class GroupChatUpdateSerializer(GroupChatUpdateAbstractSerializer):
-# 	chat_name = serializers.CharField(max_length=50, required=False)
-# 	add_users = serializers.ListField(child=serializers.CharField(), required=False)
-# 	remove_users = serializers.ListField(child=serializers.CharField(), required=False)
-
-# 	def update(self, instance, validated_data):
-# 		new_chat_name = validated_data.get('chat_name')
-# 		if new_chat_name:
-# 			instance.group.chat_name = new_chat_name
-		
-# 		add_users = validated_data.get('add_users')
-# 		if add_users:
-# 			instance.users.add(*self.get_users(add_users))
-		
-# 		remove_users = validated_data.get('remove_users')
-# 		if remove_users:
-# 			instance.users.remove(*self.get_users(remove_users))
-
-# 		return self.perform_update(instance)
-
-
-# class GroupChatUpdateAdminSerializer(GroupChatUpdateAbstractSerializer):
-# 	admin = serializers.CharField()
-# 	remove_admin = serializers.BooleanField()
-
-# 	def update(self, instance, validated_data):
-# 		if validated_data.get('remove_admin'):
-# 			try:
-# 				admin = instance.group.admins.get(username=validated_data.get('admin'))
-# 				instance.group.admins.remove(admin)
-# 			except User.DoesNotExist:
-# 				raise serializers.ValidationError('Cannot be done. User is not admin')
-# 		else:
-# 			try:
-# 				admin = instance.users.get(username=validated_data.get('admin'))
-# 				instance.group.admins.add(admin)
-# 			except User.DoesNotExist:
-# 				raise serializers.ValidationError('User should be a chat participant')
-
-# 		return self.perform_update(instance)
-
-
-
-
-# class UserMessageListSerializer(serializers.ModelSerializer):
-# 	class Meta:
-# 		model = UserMessage
-
-# 	def to_representation(self, instance):
-# 		return {
-# 			'id': instance.message.id,
-# 			'text': instance.message.text,
-# 			'author': instance.message.author.username,
-# 			'create_date': instance.message.create_date,
-# 			'delivery_date': instance.delivery_date,
-# 			'read_date': instance.read_date,
-# 		}
-
-
-# class UserMessageCreateUpdateSerializer(serializers.Serializer):
-# 	text = serializers.CharField()
-
-# 	def create(self, validated_data):
-# 		author = self.context['request'].user
-# 		try:
-# 			chat = Chat.objects.get(pk=self.context['view'].kwargs['chat_pk'])
-# 		except Chat.DoesNotExist:
-# 			raise serializers.ValidationError('There is no chat with provided ID')
-# 		message = Message.objects.create(author=author, text=validated_data['text'])
-# 		for user in chat.users.all():
-# 			chat.messages.create(chat=chat, user=user, message=message)
-# 		return message
-
-# 	def update(self, instance, validated_data):
-# 		instance.message.text = validated_data['text']
-# 		instance.message.save()
-# 		return instance.message
-
-# 	def to_representation(self, instance):
-# 		return {
-# 			'id': instance.id,
-# 			'text': instance.text,
-# 			'author': instance.author.username,
-# 			'create_date': instance.create_date,
-# 		}
+		fields = ('message',)
+
+	def create(self, validated_data):
+		author = self.context['request'].user
+		chat_id = self.context['view'].kwargs.get('chat_chat__id')
+		with transaction.atomic():
+			message = Message.objects.create(author=author, text=validated_data['message'])
+			try:
+				author.chats.get(chat__id=chat_id).send_message(message)
+			except ObjectDoesNotExist:
+				raise serializers.ValidationError('Chat does not exists')
+		return author.messages.get(chat__id=chat_id, message=message)
+
+	def update(self, instance, validated_data):
+		instance.message.text = validated_data['message']
+		instance.message.save()
+		return instance
+
+	def to_representation(self, instance):
+		return {
+			'id': instance.message.id,
+			'author': instance.message.author.username,
+			'create_date': instance.message.create_date,
+			'text': instance.message.text,
+		}

@@ -15,21 +15,23 @@ class ChatManager(models.Manager):
 
 	def create_group(self, chat_name, creator, users=[]):
 		with transaction.atomic():
-			chat = super().create(is_group_chat=True)
-			group = GroupChat(chat_name=chat_name, creator=creator, owner=creator)
-			chat.group = group
-			group.save()
+			chat = super().create(is_group_chat=True, chat_name=chat_name, creator=creator)
 			chat.save()
 			users_set = set(users)
 			users_set.add(creator)
 			for user in users_set:
-				chat.add_user(user=user)
+				if user == creator:
+					chat.add_user(user, is_owner=True)
+				else:
+					chat.add_user(user)
 		return chat
 
 
 class Chat(models.Model):
 	is_group_chat = models.BooleanField(default=False)
-	group = models.OneToOneField('GroupChat', on_delete=models.CASCADE, related_name='chat', null=True)
+	chat_name = models.CharField(max_length=50)
+	creator = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
+	create_date = models.DateTimeField(auto_now_add=True)
 
 	objects = ChatManager()
 
@@ -40,59 +42,60 @@ class Chat(models.Model):
 			for user in self.users.all():
 				self.messages.create(user=user.user, message=message)
 
-	def add_user(self, user, chat_contact=None):
-		if not self.users.filter(user=user).exists():
-			self.users.create(user=user, chat_contact=chat_contact)
+	def add_user(self, user, chat_contact=None, is_owner=False):
+		self.users.create(user=user, is_owner=is_owner, chat_contact=chat_contact)
 
 	def add_users_from_contact(self, contact):
 		self.add_user(contact.user, contact.contact)
 		self.add_user(contact.contact, contact.user)
 
-
-class GroupChat(models.Model):
-	chat_name = models.CharField(max_length=50)
-	creator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='create_groups')
-	owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='owned_groups')
-	admins = models.ManyToManyField(User)
+	def remove_user(self, user):
+		self.users.get(user=user).delete()
 
 	def add_admin(self, user):
-		if self.chat.users.filter(user=user).exists():
-			self.admins.add(user)
-		else:
-			raise UserIsNotInChat
+		admin = self.users.get(user=user)
+		admin.is_admin = True
+		admin.save()
 
 	def remove_admin(self, user):
-		self.admins.remove(user)
+		admin = self.users.get(user=user, is_admin=True)
+		admin.is_admin = False
+		admin.save()
 
-	def add_users(self, users):
+	def set_owner(self, user):
 		with transaction.atomic():
-			for user in users:
-				self.chat.add_user(user=user)
-
-	def remove_users(self, users):
-		with transaction.atomic():
-			self.admins.remove(*users)
-			self.chat.users.filter(user__in=users).delete()
+			current_owner = self.users.get(is_owner=True)
+			current_owner.is_owner = False
+			current_owner.save()
+			new_owner = self.users.get(user=user)
+			new_owner.is_owner = True
+			new_owner.save()
 
 
 class UserChat(models.Model):
 	user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chats')
 	chat = models.ForeignKey(Chat, on_delete=models.CASCADE, related_name='users')
-	chat_contact = models.ForeignKey(User, on_delete=models.CASCADE, null=True) 
+	chat_contact = models.ForeignKey(User, on_delete=models.CASCADE, null=True)
+	is_owner = models.BooleanField(default=False)
+	is_admin = models.BooleanField(default=False)
+	last_message = models.ForeignKey('Message', on_delete=models.CASCADE, null=True)
 
 	def __str__(self):
 		f = self.user.username
-		t = self.chat_contact.username if not self.chat.is_group_chat else self.chat.group.chat_name
+		t = self.chat_contact.username if not self.chat.is_group_chat else self.chat.chat_name
 		return f"{f}: {t}"
-	
+
 	def delete(self):
 		self.chat.messages.filter(user=self.user).delete()
 		return super().delete()
 
 	def send_message(self, message):
-		if not self.chat.is_group_chat:
-			self.chat.add_user(user=self.chat_contact, chat_contact=self.user)
-		self.chat.send_message(message=message)
+		with transaction.atomic():
+			if not self.chat.is_group_chat and not self.chat.users.filter(user=self.chat_contact).exists():
+				self.chat.add_user(user=self.chat_contact, chat_contact=self.user)
+			# self.last_message = message
+			# self.save()
+			self.chat.send_message(message=message)
 
 	class Meta:
 		unique_together = ['user', 'chat']
@@ -123,6 +126,7 @@ class Contact(models.Model):
 			try:
 				return handler()
 			except Exception as e:
+				print(e)
 				continue
 		raise CannotGetChat
 
@@ -145,7 +149,7 @@ class Message(models.Model):
 class UserMessage(models.Model):
 	chat = models.ForeignKey(Chat, on_delete=models.CASCADE, related_name='messages')
 	message = models.ForeignKey(Message, on_delete=models.CASCADE)
-	user = models.ForeignKey(User, on_delete=models.CASCADE)
+	user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='messages')
 	delivery_date = models.DateTimeField(blank=True, null=True)
 	read_date = models.DateTimeField(blank=True, null=True)
 

@@ -15,13 +15,11 @@ User = get_user_model()
 class UserViewSet(ModelViewSet):
 	serializer_class = UserSerializer
 	queryset = User.objects.all()
-	permission_classes = (permissions.IsAuthenticated,)
 	http_method_names = ('get', 'options')
 
 
 class ContactViewSet(ModelViewSet):
 	serializer_class = ContactListRetrieveSerializer
-	permission_classes= (permissions.IsAuthenticated,)
 
 	def get_queryset(self):
 		return self.request.user.contacts.all()
@@ -40,10 +38,13 @@ class ContactViewSet(ModelViewSet):
 
 class ChatViewSet(ModelViewSet):
 	lookup_field = 'chat__id'
+	lookup_url_kwarg = 'chat__id'
 	serializer_class = ChatListRetrieveDestroySerializer
-	permission_classes = (permissions.IsAuthenticated,)
 
 	def get_queryset(self):
+		if self.action in ('update', 'partial_update', 'set_owner'):
+			self.lookup_field = 'pk'
+			return Chat.objects.filter(users__user=self.request.user)
 		return self.request.user.chats.all()
 
 	def get_serializer_class(self):
@@ -51,27 +52,37 @@ class ChatViewSet(ModelViewSet):
 			return GroupChatCreateSerializer
 		elif self.action in ('update', 'partial_update', 'set_owner'):
 			return GroupChatUpdateSerializer
-		elif self.action in ('add_admin', 'remove_admin'):
-			return ChatManageAdminSerializer
-		elif self.action in ('add_users', 'remove_users'):
-			return ChatManageUsersSerializer
+		elif self.action == 'add_admin':
+			return ChatAddAdminSerializer
+		elif self.action == 'remove_admin':
+			return ChatRemoveAdminSerializer
+		elif self.action == 'add_users':
+			return ChatAddUsersSerializer
+		elif self.action == 'remove_user':
+			return ChatRemoveUserSerializer
 		return self.serializer_class
 
-	def update(self, request, *args, **kwargs):
-		partial = True
-		instance = self.get_object()
-		# Removing owner field if passed
-		if self.action != 'set_owner':
-			request.data.pop('owner', None)
-		serializer = self.get_serializer(instance.chat.group, data=request.data, partial=partial)
-		serializer.is_valid(raise_exception=True)
-		self.perform_update(serializer)
-		if getattr(instance, '_prefetched_objects_cache', None):
-			# If 'prefetch_related' has been applied to a queryset, we need to
-			# forcibly invalidate the prefetch cache on the instance.
-			instance._prefetched_objects_cache = {}
-		return Response(serializer.data)
+	def get_permissions(self):
+		permissions = self.permission_classes
+		if self.action in ('update', 'partial_update', 'add_users', 'remove_users'):
+			self.permission_classes = permissions + [IsChatAdminOrOwner,]
+		elif self.action in ('set_owner', 'add_admin', 'remove_admin'):
+			self.permission_classes = permissions + [IsChatOwner,]
+		else:
+			self.permission_classes = permissions + [IsChatUser,]
+		return super().get_permissions()
 
+	def update(self, request, *args, **kwargs):
+		if request.data.get('owner') and self.action != 'set_owner':
+			request.data.pop('owner')
+		self.kwargs['partial'] = True
+		return super().update(request, args, kwargs)
+
+	def destroy(self, request, *args, **kwargs):
+		chat = self.get_object()
+		if chat.is_owner:
+			return Response("You cannot leave the chat unless you are the owner", status=status.HTTP_400_BAD_REQUEST)
+		return super().destroy(request, args, kwargs)
 
 	@action(['post'], detail=True)
 	def set_owner(self, request, *args, **kwargs):
@@ -84,160 +95,40 @@ class ChatViewSet(ModelViewSet):
 
 	@action(['post'], detail=True)
 	def add_users(self, request, *args, **kwargs):
-		return super(ChatViewSet, self).create(request, args, kwargs)
+		self.kwargs['chat'] = self.get_object().chat
+		return self.create(request, args, kwargs)
 
 	@action(['post'], detail=True)
-	def remove_users(self, request, *args, **kwargs):
-		return super(ChatViewSet, self).create(request, args, kwargs)
+	def remove_user(self, request, *args, **kwargs):
+		self.kwargs['chat'] = self.get_object().chat
+		return self.create(request, args, kwargs)
 
 	@action(['post'], detail=True)
 	def add_admin(self, request, *args, **kwargs):
-		return super(ChatViewSet, self).create(request, args, kwargs)
+		self.kwargs['chat'] = self.get_object().chat
+		return self.create(request, args, kwargs)
 
 	@action(['post'], detail=True)
 	def remove_admin(self, request, *args, **kwargs):
-		return super(ChatViewSet, self).create(request, args, kwargs)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# class ChatViewSet(ModelViewSet):
-# 	serializer_class = ChatListSerializer
-# 	permission_classes = (permissions.IsAuthenticated,
-# 						  UpdateChatPermission)
-
-# 	def get_serializer_class(self):
-# 		print(self.action)
-# 		if self.action == 'create':
-# 			return PrivateChatCreateSerializer
-# 		elif self.action == 'create_group':
-# 			return GroupChatCreateSerializer
-# 		elif self.action in ('update', 'partial_update'):
-# 			return GroupChatUpdateSerializer
-# 		elif self.action == 'add_remove_admin':
-# 			return GroupChatUpdateAdminSerializer
-# 		return self.serializer_class
-	
-# 	def get_queryset(self):
-# 		return self.request.user.chats.all()
-
-
-# 	def update(self, request, *args, **kwargs):
-# 		instance = self.get_object()
-# 		if instance.is_group_chat:
-# 			return super().update(request, args, kwargs)
-# 		return Response('You cannot update a private chat', status=status.HTTP_400_BAD_REQUEST)
-
-
-# 	def destroy(self, request, *args, **kwargs):
-# 		instance = self.get_object()
-# 		if instance.is_group_chat:
-# 			if instance.users.all().count() > 1:
-# 				if instance.group.admins.all().count() > 1:
-# 					instance.group.admins.remove(request.user)
-# 				else:
-# 					if instance.group.admins.filter(id=request.user.id):
-# 						return Response('You cannot leave the group. You are the only admin in this group.', status=status.HTTP_400_BAD_REQUEST)
-# 				instance.users.remove(request.user)
-# 			else:
-# 				self.perform_destroy(instance)
-# 		else:
-# 			if instance.users.all().count() > 1:
-# 				instance.users.remove(request.user)
-# 			else:
-# 				self.perform_destroy(instance)
-# 		return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-# 	@action(['post'], detail=False)
-# 	def create_group(self, request, *args, **kwargs):
-# 		return self.create(request)
-
-# 	@action(['put', 'patch'], detail=True)
-# 	def add_remove_admin(self, request, *args, **kwargs):
-# 		return self.update(request)
-
-
-
-# class MessageViewSet(ModelViewSet):
-# 	lookup_field = 'message__id'
-# 	serializer_class = UserMessageListSerializer
-# 	permission_classes = (permissions.IsAuthenticated,
-# 						  ReadWriteMessagePermission,
-# 						  DeleteMessagePermission,
-# 						  UpdateMessagePermission,)
-
-# 	def get_serializer_class(self):
-# 		if self.action in ('create', 'update', 'partial_update'):
-# 			return UserMessageCreateUpdateSerializer
-# 		return self.serializer_class
-
-# 	def get_queryset(self):
-# 		return UserMessage.objects.filter(user=self.request.user, chat=self.kwargs['chat_pk'])
-
-
-# 	@action(['delete'], detail=True)
-# 	def complete_delete(self, request, *args, **kwargs):
-# 		instance = self.get_object()
-# 		if instance.message.author == request.user:
-# 			self.perform_destroy(instance.message)
-# 			return Response(status=status.HTTP_204_NO_CONTENT)
-# 		return Response('You cannot delete this message', status=status.HTTP_400_BAD_REQUEST)
+		self.kwargs['chat'] = self.get_object().chat
+		return self.create(request, args, kwargs)
+
+
+class MessageViewSet(ModelViewSet):
+	lookup_field = 'message__id'
+	serializer_class = MessageSerializer
+
+	def get_queryset(self):
+		return self.request.user.messages.filter(chat__id=self.kwargs['chat_chat__id'])
+
+	def get_permissions(self):
+		permissions = self.permission_classes
+		if self.action in ('update', 'partial_update', 'delete_from_all'):
+			self.permission_classes = permissions + [IsMessageAuthor,]
+		return super().get_permissions()
+
+	@action(['delete'], detail=True)
+	def delete_from_all(self, request, *args, **kwargs):
+		instance = self.get_object()
+		self.perform_destroy(instance.message)
+		return Response(status=status.HTTP_204_NO_CONTENT)
