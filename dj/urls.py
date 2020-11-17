@@ -6,7 +6,7 @@ from django.views.generic import TemplateView
 from accounts.views import ResendConfirmationEmailView
 
 urlpatterns = [
-	# path('', include('chat.urls')),
+	path('api/chat/', include('chat.urls')),
 	path('auth/resend-confirmation-email/', ResendConfirmationEmailView.as_view(), name='resend_confirmation_email'),
 	path('auth/', include('dj_rest_auth.urls')),
     path('auth/registration/', include('dj_rest_auth.registration.urls')),
